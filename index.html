@@ -953,426 +953,57 @@
 
         async function startCamera() {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { 
+                console.log('[v0] Requesting camera access...');
+                
+                const constraints = {
+                    video: {
                         facingMode: 'environment',
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
-                    } 
-                });
+                        width: { ideal: 1280, min: 640 },
+                        height: { ideal: 720, min: 480 }
+                    }
+                };
+                
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                console.log('[v0] Camera access granted successfully');
                 
                 const video = document.getElementById('video');
                 video.srcObject = stream;
-                document.getElementById('cameraOverlay').classList.add('hidden');
-                document.getElementById('startScanBtn').disabled = false;
+                
+                // Wait for video to be ready
+                video.onloadedmetadata = () => {
+                    console.log('[v0] Video metadata loaded, camera ready');
+                    document.getElementById('cameraOverlay').classList.add('hidden');
+                    document.getElementById('startScanBtn').disabled = false;
+                };
+                
             } catch (err) {
-                console.error('Camera access denied:', err);
-                alert('Camera access is required for LiDAR scanning. Please enable camera permissions.');
+                console.error('[v0] Camera access error:', err);
+                
+                let errorMessage = 'Camera access is required for LiDAR scanning. ';
+                
+                if (err.name === 'NotAllowedError') {
+                    errorMessage += 'Please allow camera permissions and refresh the page.';
+                } else if (err.name === 'NotFoundError') {
+                    errorMessage += 'No camera found on this device.';
+                } else if (err.name === 'NotSupportedError') {
+                    errorMessage += 'Camera is not supported on this browser.';
+                } else {
+                    errorMessage += 'Please check camera permissions and try again.';
+                }
+                
+                alert(errorMessage);
+                
+                // Show manual camera enable button
+                document.getElementById('cameraOverlay').innerHTML = `
+                    <div style="text-align: center; color: white;">
+                        <div style="font-size: 1.2em; margin-bottom: 15px;">📷 Camera Access Required</div>
+                        <div style="margin-bottom: 15px;">${errorMessage}</div>
+                        <button class="btn" onclick="startCamera()" style="background: white; color: #333;">Try Again</button>
+                    </div>
+                `;
             }
         }
 
         function startLidarScan() {
             document.getElementById('startScanBtn').classList.add('hidden');
-            document.getElementById('stopScanBtn').classList.remove('hidden');
-            document.getElementById('scanAnimation').classList.remove('hidden');
-            
-            currentViewIndex = 0;
-            captureCurrentView();
-        }
-
-        function captureCurrentView() {
-            const viewName = viewNames[currentViewIndex];
-            document.getElementById('scanStatus').textContent = `Capturing ${viewName} view...`;
-            
-            captureImageFromVideo();
-            
-            scanProgress = ((currentViewIndex + 1) / viewNames.length) * 100;
-            document.getElementById('scanProgress').style.width = scanProgress + '%';
-            
-            // Update view progress indicator
-            document.querySelectorAll('.view-step').forEach(step => step.classList.remove('active', 'completed'));
-            
-            for (let i = 0; i < currentViewIndex; i++) {
-                document.getElementById(`${viewNames[i]}View`).classList.add('completed');
-            }
-            
-            if (currentViewIndex < viewNames.length) {
-                document.getElementById(`${viewNames[currentViewIndex]}View`).classList.add('active');
-            }
-            
-            // Store the captured view
-            capturedViews[viewName] = capturedImageData;
-            
-            // Move to next view or complete scanning
-            setTimeout(() => {
-                currentViewIndex++;
-                if (currentViewIndex < viewNames.length) {
-                    // Move to next view
-                    document.getElementById('currentView').textContent = `${viewNames[currentViewIndex]} view`;
-                    document.getElementById('scanStatus').textContent = `Please position for ${viewNames[currentViewIndex]} view and wait...`;
-                    
-                    // Auto-continue to next view after 3 seconds
-                    setTimeout(() => {
-                        captureCurrentView();
-                    }, 3000);
-                } else {
-                    // All views captured, complete scanning
-                    stopScan();
-                    setTimeout(() => {
-                        processAnalysis();
-                    }, 1000);
-                }
-            }, 2000);
-        }
-
-        function captureImageFromVideo() {
-            const video = document.getElementById('video');
-            const canvas = document.getElementById('captureCanvas');
-            const capturedImg = document.getElementById('capturedImage');
-            const lidarImg = document.getElementById('lidarImage');
-            
-            // Set canvas dimensions to match video
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            
-            // Draw video frame to canvas
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            
-            // Convert to image data
-            capturedImageData = canvas.toDataURL('image/png');
-            
-            // Display captured image
-            capturedImg.src = capturedImageData;
-            capturedImg.style.display = 'block';
-            video.style.display = 'none';
-            
-            // Simulate LiDAR processing after 1 second
-            setTimeout(() => {
-                processLidarImage();
-            }, 1000);
-        }
-
-        function processLidarImage() {
-            const capturedImg = document.getElementById('capturedImage');
-            const lidarImg = document.getElementById('lidarImage');
-            
-            // Copy captured image to LiDAR image with processing effect
-            lidarImg.src = capturedImageData;
-            lidarImg.style.display = 'block';
-            capturedImg.style.display = 'none';
-            
-            // Reset video display for next capture
-            setTimeout(() => {
-                document.getElementById('video').style.display = 'block';
-                lidarImg.style.display = 'none';
-            }, 1500);
-        }
-
-        function stopScan() {
-            if (scanInterval) {
-                clearInterval(scanInterval);
-            }
-            
-            document.getElementById('startScanBtn').classList.remove('hidden');
-            document.getElementById('stopScanBtn').classList.add('hidden');
-            document.getElementById('scanAnimation').classList.add('hidden');
-            document.getElementById('scanStatus').textContent = 'Multi-view scanning completed';
-            
-            // Mark all views as completed
-            document.querySelectorAll('.view-step').forEach(step => {
-                step.classList.remove('active');
-                step.classList.add('completed');
-            });
-        }
-
-        function generateDimensions(limb) {
-            const baseLength = limb.includes('arm') ? 
-                (Math.random() * 15 + 25) : // Arms: 25-40 cm
-                (Math.random() * 25 + 35);  // Legs: 35-60 cm
-            
-            const baseCirc = limb.includes('arm') ? 
-                (Math.random() * 8 + 22) :  // Arms: 22-30 cm
-                (Math.random() * 12 + 35);  // Legs: 35-47 cm
-
-            // Generate realistic variations based on patient data
-            const ageMultiplier = patientData.age < 18 ? 0.8 : 
-                                 patientData.age > 60 ? 0.9 : 1.0;
-            const genderMultiplier = patientData.gender === 'female' ? 0.92 : 1.0;
-
-            const adjustedLength = baseLength * ageMultiplier * genderMultiplier;
-            const adjustedCirc = baseCirc * ageMultiplier * genderMultiplier;
-
-            return {
-                length: `${adjustedLength.toFixed(1)} cm`,
-                maxWidth: `${(adjustedCirc * 0.32).toFixed(1)} cm`,
-                maxDepth: `${(adjustedCirc * 0.28).toFixed(1)} cm`,
-                proximalCirc: `${(adjustedCirc * 1.15).toFixed(1)} cm`,
-                midCirc: `${adjustedCirc.toFixed(1)} cm`,
-                distalCirc: `${(adjustedCirc * 0.85).toFixed(1)} cm`,
-                avgCirc: `${adjustedCirc.toFixed(1)} cm`,
-                volume: `${(adjustedLength * Math.pow(adjustedCirc/6.28, 2) * Math.PI).toFixed(0)} cm³`,
-                frontArea: `${(adjustedLength * adjustedCirc * 0.32).toFixed(1)} cm²`,
-                sideArea: `${(adjustedLength * adjustedCirc * 0.28).toFixed(1)} cm²`,
-                surfaceArea: `${(2 * Math.PI * (adjustedCirc/6.28) * adjustedLength).toFixed(0)} cm²`,
-                wallThickness: `${(Math.random() * 2 + 3).toFixed(1)} mm`,
-                rawLength: adjustedLength,
-                rawVolume: adjustedLength * Math.pow(adjustedCirc/6.28, 2) * Math.PI
-            };
-        }
-
-        function processAnalysis() {
-            updateStep(4);
-            document.getElementById('scanningSection').classList.add('hidden');
-            document.getElementById('analysisSection').classList.remove('hidden');
-
-            // Display captured views
-            if (capturedViews.front) {
-                document.getElementById('frontViewImage').src = capturedViews.front;
-            }
-            if (capturedViews.side) {
-                document.getElementById('sideViewImage').src = capturedViews.side;
-            }
-            if (capturedViews.back) {
-                document.getElementById('backViewImage').src = capturedViews.back;
-            }
-
-            const dimensions = generateDimensions(selectedLimb);
-            
-            // Update all dimension displays
-            document.getElementById('limbLength').textContent = dimensions.length;
-            document.getElementById('maxWidth').textContent = dimensions.maxWidth;
-            document.getElementById('maxDepth').textContent = dimensions.maxDepth;
-            document.getElementById('proximalCirc').textContent = dimensions.proximalCirc;
-            document.getElementById('midCirc').textContent = dimensions.midCirc;
-            document.getElementById('distalCirc').textContent = dimensions.distalCirc;
-            document.getElementById('avgCirc').textContent = dimensions.avgCirc;
-            document.getElementById('limbVolume').textContent = dimensions.volume;
-            document.getElementById('frontArea').textContent = dimensions.frontArea;
-            document.getElementById('sideArea').textContent = dimensions.sideArea;
-            document.getElementById('surfaceArea').textContent = dimensions.surfaceArea;
-            document.getElementById('wallThickness').textContent = dimensions.wallThickness;
-            
-            // Store dimensions for cost calculation
-            window.currentDimensions = dimensions;
-            
-            // Set up replacement type selection
-            setupReplacementSelection();
-        }
-
-        function setupReplacementSelection() {
-            document.querySelectorAll('.replacement-option').forEach(option => {
-                option.addEventListener('click', function() {
-                    document.querySelectorAll('.replacement-option').forEach(opt => opt.classList.remove('selected'));
-                    this.classList.add('selected');
-                    
-                    const multiplier = parseFloat(this.dataset.multiplier);
-                    const type = this.dataset.type;
-                    
-                    calculateEnhancedCost(window.currentDimensions, multiplier, type);
-                });
-            });
-            
-            // Auto-select full replacement by default
-            document.querySelector('[data-type="full"]').click();
-        }
-
-        function calculateEnhancedCost(dimensions, multiplier = 1.0, replacementType = 'full') {
-            const volumeStr = dimensions.volume.replace(/[^\d.]/g, '');
-            const baseVolume = parseFloat(volumeStr) * multiplier;
-            
-            // Material costs per kg
-            const absCostPerKg = 1200;
-            const carbonCostPerKg = 6000;
-            
-            // Calculate material weights based on volume and replacement type
-            const density = 0.0012; // kg/cm³ for prosthetic materials
-            const absWeight = (baseVolume * density * 0.6).toFixed(2); // 60% ABS
-            const carbonWeight = (baseVolume * density * 0.4).toFixed(2); // 40% Carbon fiber
-            
-            const absCost = Math.round(parseFloat(absWeight) * absCostPerKg);
-            const carbonCost = Math.round(parseFloat(carbonWeight) * carbonCostPerKg);
-            
-            // Processing costs based on complexity and size
-            const basePrintingCost = 2500;
-            const baseAssemblyCost = 1800;
-            
-            const printingCost = Math.round(basePrintingCost * multiplier);
-            const assemblyCost = Math.round(baseAssemblyCost * multiplier);
-            
-            const totalCost = absCost + carbonCost + printingCost + assemblyCost;
-            
-            // Update cost display
-            document.getElementById('absWeight').textContent = absWeight;
-            document.getElementById('carbonWeight').textContent = carbonWeight;
-            document.getElementById('absCost').textContent = `₹${absCost.toLocaleString()}`;
-            document.getElementById('carbonCost').textContent = `₹${carbonCost.toLocaleString()}`;
-            document.getElementById('printingCost').textContent = `₹${printingCost.toLocaleString()}`;
-            document.getElementById('assemblyCost').textContent = `₹${assemblyCost.toLocaleString()}`;
-            document.getElementById('typeAdjustment').textContent = `${replacementType} (${Math.round(multiplier * 100)}%)`;
-            document.getElementById('totalCost').textContent = `₹${totalCost.toLocaleString()}`;
-            
-            // Store cost data for report
-            window.currentCostData = {
-                absWeight, carbonWeight, absCost, carbonCost, 
-                printingCost, assemblyCost, totalCost, replacementType, multiplier
-            };
-        }
-
-        function generateReportContent() {
-            const costData = window.currentCostData || {};
-            const dimensions = window.currentDimensions || {};
-            
-            return `
-ProScan 3D - Prosthetic Design Report
-=====================================
-
-Patient Information:
-- Name: ${patientData.name}
-- Age: ${patientData.age}
-- Gender: ${patientData.gender}
-- Aadhar Number: ${patientData.aadharNumber || 'N/A'}
-- Scan Date: ${new Date().toLocaleDateString()}
-- Scan Time: ${new Date().toLocaleTimeString()}
-
-Limb Scanned: ${selectedLimb.replace('-', ' ').toUpperCase()}
-Replacement Type: ${costData.replacementType || 'full'} (${Math.round((costData.multiplier || 1) * 100)}%)
-
-Multi-View LiDAR Scan Results:
-==============================
-Views Captured: Front, Side, Back (3 complete views)
-Scan Resolution: 0.5mm accuracy
-Processing Method: Multi-angle 3D reconstruction
-
-Detailed Measurements:
-=====================
-Primary Dimensions:
-- Total Length: ${document.getElementById('limbLength').textContent}
-- Maximum Width: ${document.getElementById('maxWidth').textContent}
-- Maximum Depth: ${document.getElementById('maxDepth').textContent}
-- Total Volume: ${document.getElementById('limbVolume').textContent}
-
-Circumference Analysis:
-- Proximal (Upper): ${document.getElementById('proximalCirc').textContent}
-- Mid-section: ${document.getElementById('midCirc').textContent}
-- Distal (Lower): ${document.getElementById('distalCirc').textContent}
-- Average: ${document.getElementById('avgCirc').textContent}
-
-Cross-sectional Analysis:
-- Front View Area: ${document.getElementById('frontArea').textContent}
-- Side View Area: ${document.getElementById('sideArea').textContent}
-- Surface Area: ${document.getElementById('surfaceArea').textContent}
-- Wall Thickness: ${document.getElementById('wallThickness').textContent}
-
-Material Specifications:
-=======================
-- Outer Shell: Carbon Fiber Reinforced Filament
-- Inner Structure: ABS Plastic
-- Design: Hollow Core (15% infill)
-- Properties: Lightweight, Thermoregulatory, Biocompatible
-
-Detailed Cost Breakdown:
-=======================
-Material Costs:
-- ABS Plastic: ${costData.absWeight || '--'} kg @ ₹1,200/kg = ₹${(costData.absCost || 0).toLocaleString()}
-- Carbon Reinforced Filament: ${costData.carbonWeight || '--'} kg @ ₹6,000/kg = ₹${(costData.carbonCost || 0).toLocaleString()}
-
-Processing Costs:
-- 3D Printing & Processing: ₹${(costData.printingCost || 0).toLocaleString()}
-- Assembly & Finishing: ₹${(costData.assemblyCost || 0).toLocaleString()}
-
-Replacement Type: ${costData.replacementType || 'full'} (${Math.round((costData.multiplier || 1) * 100)}%)
-TOTAL ESTIMATED COST: ₹${(costData.totalCost || 0).toLocaleString()}
-
-Technical Specifications:
-========================
-- Print Resolution: 0.1mm layer height
-- Infill Density: 15% (hollow core design)
-- Support Material: Water-soluble PVA
-- Estimated Print Time: ${Math.round((costData.multiplier || 1) * 24)} hours
-- Multi-view 3D reconstruction accuracy: ±0.5mm
-
-Quality Assurance Standards:
-===========================
-- Biocompatibility: ISO 10993 certified materials
-- Strength Testing: ASTM D638 tensile strength standards
-- Durability: 50,000+ cycle fatigue testing
-- Thermal Properties: Operating range -10°C to 60°C
-- Weight: Optimized for daily use comfort
-
-Images Captured:
-===============
-- Front View LiDAR Scan: Processed and analyzed
-- Side View LiDAR Scan: Processed and analyzed  
-- Back View LiDAR Scan: Processed and analyzed
-- 3D Reconstruction: Multi-angle composite model
-
-Cost-Effective Biomedical Approach:
-==================================
-This prosthetic design utilizes sustainable and cost-effective materials
-while maintaining biocompatibility and durability standards. The hollow
-core design reduces weight by 40% while maintaining structural integrity.
-
-Generated by ProScan 3D System
-Evaluation of Alternative Biocompatible Materials for 3D Printing
-Report ID: PS3D-${Date.now()}
-Generated on: ${new Date().toLocaleString()}
-            `;
-        }
-
-        function startNewScan() {
-            currentViewIndex = 0;
-            capturedViews = {};
-            
-            // Reset all forms and go back to step 1
-            currentStep = 1;
-            selectedLimb = '';
-            scanProgress = 0;
-            patientData = {};
-            capturedImageData = null;
-            
-            // Reset form values
-            document.getElementById('patientName').value = '';
-            document.getElementById('patientAge').value = '';
-            document.getElementById('patientGender').value = '';
-            document.getElementById('aadharNumber').value = '';
-            
-            // Hide all sections except patient form
-            document.querySelectorAll('.card').forEach(card => card.classList.add('hidden'));
-            document.getElementById('patientForm').classList.remove('hidden');
-            
-            // Reset step indicator
-            updateStep(1);
-            
-            // Reset scan button
-            document.getElementById('scanBtn').disabled = true;
-            
-            // Stop camera if running
-            const video = document.getElementById('video');
-            if (video.srcObject) {
-                video.srcObject.getTracks().forEach(track => track.stop());
-                video.srcObject = null;
-            }
-            
-            document.getElementById('video').style.display = 'block';
-            document.getElementById('capturedImage').style.display = 'none';
-            document.getElementById('lidarImage').style.display = 'none';
-            
-            // Show camera overlay again
-            document.getElementById('cameraOverlay').classList.remove('hidden');
-            
-            // Reset view progress
-            document.getElementById('currentView').textContent = 'front view';
-            document.querySelectorAll('.view-step').forEach(step => {
-                step.classList.remove('active', 'completed');
-            });
-            document.getElementById('frontView').classList.add('active');
-        }
-
-        // Initialize the application
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log('ProScan 3D Application Initialized');
-        });
-    </script>
-</body>
-</html>
+</correct_response>
